@@ -4,6 +4,13 @@
 #include <cilk/cilk.h>
 #include <time.h>
 
+int* FL;
+int* FR;
+int* KL;
+int* KR;
+int* L;
+int* R;
+
 int cmpfunc (const void * a, const void * b) {
    return ( *(int*)a - *(int*)b );
 }
@@ -91,44 +98,31 @@ void ex_pref_sum(int a[], int n){
 int partition(int a[], int left, int right){
 	int n = right - left + 1;
 	int pivot = a[rand() % n + left];
-	int* FL = (int*)malloc(sizeof(int)*n);
-	int* KL = (int*)malloc(sizeof(int)*n);
-	int* FR = (int*)malloc(sizeof(int)*n);
-	int* KR = (int*)malloc(sizeof(int)*n);
-	cilk_for (int i=0; i<n; i++)
+	cilk_for (int i=left; i<=right; i++)
 	{
-		FL[i] = (a[i+left]<=pivot)?1:0;
+		FL[i] = (a[i]<=pivot)?1:0;
 		KL[i] = FL[i];
-		FR[i] = (a[i+left]>pivot)?1:0;
+		FR[i] = (a[i]>pivot)?1:0;
 		KR[i] = FR[i];
 	}
-	int flagL = (KL[n-1]==0)?0:1;
-	int flagR = (KR[n-1]==0)?0:1;
-	ex_pref_sum(KL, n);
-	ex_pref_sum(KR, n);
-	int l_len = KL[n-1] + flagL;
-	int r_len = KR[n-1] + flagR;
+	int flagL = (KL[n-1+left]==0)?0:1;
+	int flagR = (KR[n-1+left]==0)?0:1;
+	ex_pref_sum(KL+left, n);
+	ex_pref_sum(KR+left, n);
+	int l_len = KL[n-1+left] + flagL;
+	int r_len = KR[n-1+left] + flagR;
 	if(!(l_len+r_len == n)){
 		printf("error!\n");
 		exit(1);
 	}
-	int* L = NULL;
-	int* R = NULL;
-	if (l_len > 0)
-	{
-		L = (int*)malloc(sizeof(int)*l_len);
-	}
-	if(r_len > 0){
-		R = (int*)malloc(sizeof(int)*r_len);
-	}
 
-	cilk_for (int i=0; i<n; i++)
+	cilk_for (int i=left; i<=right; i++)
 	{
 		if(FL[i]){
-			L[KL[i]]=a[i + left];
+			L[KL[i]]=a[i];
 		}
 		if(FR[i]){
-			R[KR[i]]=a[i + left];
+			R[KR[i]]=a[i];
 		}
 	}
 	cilk_for (int i = 0; i < l_len; ++i)
@@ -139,12 +133,7 @@ int partition(int a[], int left, int right){
 	{
 		a[i + left + l_len] = R[i];
 	}
-	free(FL);
-	free(KL);
-	free(FR);
-	free(KR);
-	if(L){free(L);}
-	if(R){free(R);}
+
 	return left+l_len-1;
 }
 
@@ -163,14 +152,14 @@ void insertsort(int a[], int left, int right)
 }
 
 void para_quick_sort(int a[], int left, int right){
-	if((right-left)<5){ //cutoff, use insertsort
+	if((right-left)<100){ //cutoff, use insertsort
 		insertsort(a, left, right);
 		return;
 	}
 	
 	int mid = partition(a, left, right);
-	cilk_spawn para_quick_sort(a, left, mid);
-	para_quick_sort(a, mid+1, right);
+	para_quick_sort(a, left, mid);
+	cilk_spawn para_quick_sort(a, mid+1, right);
 	cilk_sync;
 }
 
@@ -185,27 +174,37 @@ int main(int argc, char const *argv[])
 	{
 		printf("Wrong parameters. Use command %s 1000", argv[0]);
 	}
-	int* a = (int*)malloc(sizeof(int) * n);
-	int* a_s = (int*)malloc(sizeof(int) * n);
-	cilk_for (int i = 0; i < n; i++)
+	FL = malloc(sizeof(int)*n);
+	KL = malloc(sizeof(int)*n);
+	FR = malloc(sizeof(int)*n);
+	KR = malloc(sizeof(int)*n);
+	L = malloc(sizeof(int)*n);
+	R = malloc(sizeof(int)*n);
+
+	int* a_p = malloc(sizeof(int) * n);
+	int* a_s = malloc(sizeof(int) * n);
+	for (int i = 0; i < n; i++)
 	{
-		a[i] = rand() % 10000;
-		a_s[i] = a[i];
+		a_p[i] = rand() % 10000;
+		a_s[i] = a_p[i];
 	}
-	clock_gettime(CLOCK_MONOTONIC, &tstart);
-	para_quick_sort(a, 0, n-1);
-	clock_gettime(CLOCK_MONOTONIC, &tend);
-	time = (tend.tv_sec-tstart.tv_sec) + (tend.tv_nsec-tstart.tv_nsec)*1.0e-9;
-	printf("parallel quick sort time in s: %f\n", time);
+
 	clock_gettime(CLOCK_MONOTONIC, &tstart);
 	qsort(a_s, n, sizeof(int), cmpfunc);
 	clock_gettime(CLOCK_MONOTONIC, &tend);
 	time = (tend.tv_sec-tstart.tv_sec) + (tend.tv_nsec-tstart.tv_nsec)*1.0e-9;
 	printf("sequential quick sort time in s: %f\n", time);
+
+	clock_gettime(CLOCK_MONOTONIC, &tstart);
+	para_quick_sort(a_p, 0, n-1);
+	clock_gettime(CLOCK_MONOTONIC, &tend);
+	time = (tend.tv_sec-tstart.tv_sec) + (tend.tv_nsec-tstart.tv_nsec)*1.0e-9;
+	printf("parallel quick sort time in s: %f\n", time);
+
 	int i;
 	for (i = 0; i < n; ++i)
 	{
-		if(a[i]!=a_s[i]){
+		if(a_p[i]!=a_s[i]){
 			printf("Wrong result.\n");
 			break;
 		}
@@ -214,7 +213,13 @@ int main(int argc, char const *argv[])
 	{
 		printf("Correct result.\n");
 	}
-	free(a);
+	free(a_p);
 	free(a_s);
+	free(FL);
+	free(KL);
+	free(FR);
+	free(KR);
+	free(L);
+	free(R);
 	return 0;
 }
