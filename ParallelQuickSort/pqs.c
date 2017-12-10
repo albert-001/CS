@@ -3,13 +3,12 @@
 #include <stdlib.h>
 #include <cilk/cilk.h>
 #include <time.h>
+#include <string.h>
 
 int* FL;
 int* FR;
 int* KL;
 int* KR;
-int* L;
-int* R;
 
 int cmpfunc (const void * a, const void * b) {
    return ( *(int*)a - *(int*)b );
@@ -39,7 +38,7 @@ void up(int a[], int n){
 		int m = 2*j;
 		cilk_for (int i = 0; i < n; i += m)
 		{
-			a[i+2*j-1] += a[i+j-1];
+			a[i+m-1] += a[i+j-1];
 		}
 	}
 }
@@ -105,34 +104,35 @@ int partition(int a[], int left, int right){
 		FR[i] = (a[i]>pivot)?1:0;
 		KR[i] = FR[i];
 	}
-	int flagL = (KL[n-1+left]==0)?0:1;
-	int flagR = (KR[n-1+left]==0)?0:1;
-	ex_pref_sum(KL+left, n);
+	int flagL = (KL[right]==0)?0:1;
+	int flagR = (KR[right]==0)?0:1; 
+	cilk_spawn ex_pref_sum(KL+left, n);
 	ex_pref_sum(KR+left, n);
-	int l_len = KL[n-1+left] + flagL;
-	int r_len = KR[n-1+left] + flagR;
+	cilk_sync;
+	int l_len = KL[right] + flagL;
+	int r_len = KR[right] + flagR;
 	if(!(l_len+r_len == n)){
 		printf("error!\n");
 		exit(1);
 	}
 
+	if (l_len==0 || r_len==0)
+	{
+		return -1;
+	}
+
+	int* L = malloc(sizeof(int)*l_len);
+	int* R = malloc(sizeof(int)*r_len);
+
 	cilk_for (int i=left; i<=right; i++)
 	{
-		if(FL[i]){
-			L[KL[i]]=a[i];
-		}
-		if(FR[i]){
-			R[KR[i]]=a[i];
-		}
+		if(FL[i]==1){L[KL[i]]=a[i];}
+		if(FR[i]==1){R[KR[i]]=a[i];}
 	}
-	cilk_for (int i = 0; i < l_len; ++i)
-	{
-		a[i + left] = L[i];
-	}
-	cilk_for (int i = 0; i < r_len; ++i)
-	{
-		a[i + left + l_len] = R[i];
-	}
+
+	cilk_spawn memcpy(a+left, L, l_len*sizeof(int));
+	memcpy(a+left+l_len, R, r_len*sizeof(int));
+	cilk_sync;
 
 	return left+l_len-1;
 }
@@ -152,17 +152,20 @@ void insertsort(int a[], int left, int right)
 }
 
 void para_quick_sort(int a[], int left, int right){
-	if((right-left)<100){ //cutoff, use insertsort
+	if(right-left<100){
 		insertsort(a, left, right);
 		return;
 	}
-	
-	int mid = partition(a, left, right);
-	para_quick_sort(a, left, mid);
-	cilk_spawn para_quick_sort(a, mid+1, right);
-	cilk_sync;
+	int i = partition(a, left, right);
+	if (i==-1)
+	{
+		para_quick_sort(a, left, right);
+	}else{
+		cilk_spawn para_quick_sort(a, left, i);
+		para_quick_sort(a, i+1, right);
+		cilk_sync;
+	}
 }
-
 
 int main(int argc, char const *argv[])
 {
@@ -178,14 +181,12 @@ int main(int argc, char const *argv[])
 	KL = malloc(sizeof(int)*n);
 	FR = malloc(sizeof(int)*n);
 	KR = malloc(sizeof(int)*n);
-	L = malloc(sizeof(int)*n);
-	R = malloc(sizeof(int)*n);
 
 	int* a_p = malloc(sizeof(int) * n);
 	int* a_s = malloc(sizeof(int) * n);
 	for (int i = 0; i < n; i++)
 	{
-		a_p[i] = rand() % 10000;
+		a_p[i] = rand() % n;
 		a_s[i] = a_p[i];
 	}
 
@@ -219,7 +220,5 @@ int main(int argc, char const *argv[])
 	free(KL);
 	free(FR);
 	free(KR);
-	free(L);
-	free(R);
 	return 0;
 }
