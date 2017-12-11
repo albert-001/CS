@@ -130,9 +130,8 @@ int partition(int a[], int left, int right){
 		if(FR[i]==1){R[KR[i]]=a[i];}
 	}
 
-	cilk_spawn memcpy(a+left, L, l_len*sizeof(int));
+	memcpy(a+left, L, l_len*sizeof(int));
 	memcpy(a+left+l_len, R, r_len*sizeof(int));
-	cilk_sync;
 
 	return left+l_len-1;
 }
