@@ -118,7 +118,7 @@ int partition(int a[], int left, int right){
 
 	if (l_len==0 || r_len==0)
 	{
-		return -1;
+		return partition(a, left, right);
 	}
 
 	int* L = malloc(sizeof(int)*l_len);
@@ -156,14 +156,9 @@ void para_quick_sort(int a[], int left, int right){
 		return;
 	}
 	int i = partition(a, left, right);
-	if (i==-1)
-	{
-		para_quick_sort(a, left, right);
-	}else{
-		cilk_spawn para_quick_sort(a, left, i);
-		para_quick_sort(a, i+1, right);
-		cilk_sync;
-	}
+	cilk_spawn para_quick_sort(a, left, i);
+	para_quick_sort(a, i+1, right);
+	cilk_sync;
 }
 
 int main(int argc, char const *argv[])
